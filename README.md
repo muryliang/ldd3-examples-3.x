@@ -1,28 +1,7 @@
-Advertisement
-=================
-腾讯诚招PHP后台、C++后台、Android终端、IOS终端
-
-有意者邮件522069228(@)qq.com
-
-长期有效
-
-PHP后台
-http://hr.tencent.com/position_detail.php?id=21921
-
-C++后台
-http://hr.tencent.com/position_detail.php?id=16499
-
-Android终端
-http://hr.tencent.com/position_detail.php?id=17212
-
-IOS终端
-http://hr.tencent.com/position_detail.php?id=16916
-
-
 ldd3-examples-3.x
 =================
 
-port of the ldd3 source code examples to linux 3.x
+port of the ldd3 source code examples after linux 3.x
 
 Backgroud
 =================
@@ -44,8 +23,13 @@ to the longterm stable branch after linux 3.0, including:
 |linux 3.10      |June 2013 |
 |linux 3.12      |November 2013 |
 |linux 3.14      |March 2014 |
+|linux 3.16      |August 2014 |
 |linux 3.18      |December 2014 |
 |linux 4.1       |June 2015 |
+|linux 4.4       |January 2016 |
+|linux 4.9       |December 2016 |
+|linux 4.14      |November 2017 |
+|linux 4.19      |October 2018 |
 
 The key difference between this project and other porting attemps is that
 all these examples not only compile on the modern kernel version,
@@ -100,4 +84,8 @@ c. gdb/qemu.
    compile busybox+linux running in qemu, load buggy module, use gdb to debug it.
    Embedded Linux From Scratch is useful when doing such tasks, refer to
    http://free-electrons.com/docs/elfs/.
+
+Update Ubuntu kernel.
+-----------------
+download from http://kernel.ubuntu.com/~kernel-ppa/mainline/.
 

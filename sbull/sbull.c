@@ -118,7 +118,7 @@ static void sbull_request(struct request_queue *q)
 	req = blk_fetch_request(q);
 	while (req) {
 		struct sbull_dev *dev = req->rq_disk->private_data;
-		if (req->cmd_type != REQ_TYPE_FS) {
+		if (blk_rq_is_passthrough(req)) {
 			printk (KERN_NOTICE "Skip non-fs request\n");
 			ret = -EIO;
 			goto done;
@@ -147,11 +147,11 @@ static int sbull_xfer_bio(struct sbull_dev *dev, struct bio *bio)
 
 	/* Do each segment independently. */
 	bio_for_each_segment(bvec, bio, iter) {
-		char *buffer = __bio_kmap_atomic(bio, iter);
+		char *buffer = kmap_atomic(bvec.bv_page) + bvec.bv_offset;
 		sbull_transfer(dev, sector,bytes_to_sectors_checked(bio_cur_bytes(bio)),
 				buffer, bio_data_dir(bio) == WRITE);
 		sector += (bytes_to_sectors_checked(bio_cur_bytes(bio)));
-		__bio_kunmap_atomic(bio);
+		kunmap_atomic(buffer);
 	}
 	return 0; /* Always "succeed" */
 }
@@ -184,7 +184,7 @@ static void sbull_full_request(struct request_queue *q)
 	int ret;
 
 	while ((req = blk_fetch_request(q)) != NULL) {
-		if (req->cmd_type != REQ_TYPE_FS) {
+		if (blk_rq_is_passthrough(req)) {
 			printk (KERN_NOTICE "Skip non-fs request\n");
 			ret = -EIO;
 			goto done;
@@ -201,13 +201,15 @@ static void sbull_full_request(struct request_queue *q)
 /*
  * The direct make request version.
  */
-static void sbull_make_request(struct request_queue *q, struct bio *bio)
+static blk_qc_t sbull_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct sbull_dev *dev = q->queuedata;
 	int status;
 
 	status = sbull_xfer_bio(dev, bio);
-	bio_endio(bio, status);
+	bio->bi_status = status;
+	bio_endio(bio);
+	return BLK_QC_T_NONE;
 }
 
 
@@ -272,9 +274,9 @@ int sbull_revalidate(struct gendisk *gd)
  * The "invalidate" function runs out of the device timer; it sets
  * a flag to simulate the removal of the media.
  */
-void sbull_invalidate(unsigned long ldev)
+void sbull_invalidate(struct timer_list* arg)
 {
-	struct sbull_dev *dev = (struct sbull_dev *) ldev;
+	struct sbull_dev *dev = from_timer(dev, arg, timer);
 
 	spin_lock(&dev->lock);
 	if (dev->users || !dev->data) 
@@ -352,9 +354,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	/*
 	 * The timer which "invalidates" the device.
 	 */
-	init_timer(&dev->timer);
-	dev->timer.data = (unsigned long) dev;
-	dev->timer.function = sbull_invalidate;
+	timer_setup(&dev->timer, sbull_invalidate, 0);
 	
 	/*
 	 * The I/O queue, depending on whether we are using our own

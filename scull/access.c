@@ -21,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>   /* kmalloc() */
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/fs.h>     /* everything... */
 #include <linux/errno.h>  /* error codes */
 #include <linux/types.h>  /* size_t */
@@ -29,6 +30,7 @@
 #include <linux/tty.h>
 #include <asm/atomic.h>
 #include <linux/list.h>
+#include <linux/cred.h>
 
 #include "scull.h"        /* local definitions */
 
@@ -333,7 +335,7 @@ static struct scull_adev_info {
 	{ "scullsingle", &scull_s_device, &scull_sngl_fops },
 	{ "sculluid", &scull_u_device, &scull_user_fops },
 	{ "scullwuid", &scull_w_device, &scull_wusr_fops },
-	{ "sullpriv", &scull_c_device, &scull_priv_fops }
+	{ "scullpriv", &scull_c_device, &scull_priv_fops }
 };
 #define SCULL_N_ADEVS 4
 

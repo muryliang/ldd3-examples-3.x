@@ -23,6 +23,7 @@
 #include <linux/tty_flip.h>
 #include <linux/serial.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/seq_file.h>
 #include <asm/uaccess.h>
 
@@ -39,13 +40,13 @@ MODULE_LICENSE("GPL");
 #define DELAY_TIME		HZ * 2	/* 2 seconds per character */
 #define TINY_DATA_CHARACTER	't'
 
-#define TINY_TTY_MAJOR		240	/* experimental range */
+#define TINY_TTY_MAJOR		0	/* experimental range */
 #define TINY_TTY_MINORS		4	/* only have 4 devices */
 
 struct tiny_serial {
 	struct tty_port	port;		/* pointer to the tty for this device */
 	struct mutex	port_write_mutex;
-	struct timer_list	*timer;
+	struct timer_list	timer;
 
 	/* for tiocmget and tiocmset functions */
 	int			msr;		/* MSR shadow */
@@ -60,9 +61,9 @@ struct tiny_serial {
 static struct tiny_serial *tiny_table[TINY_TTY_MINORS];	/* initially all NULL */
 
 
-static void tiny_timer(unsigned long timer_data)
+static void tiny_timer(struct timer_list* arg)
 {
-	struct tiny_serial *tiny = (struct tiny_serial *)timer_data;
+	struct tiny_serial *tiny = from_timer(tiny, arg, timer);
 	struct tty_port *port;
 	int i;
 	char data[1] = {TINY_DATA_CHARACTER};
@@ -84,8 +85,8 @@ static void tiny_timer(unsigned long timer_data)
 	tty_flip_buffer_push(port);
 
 	/* resubmit the timer again */
-	tiny->timer->expires = jiffies + DELAY_TIME;
-	add_timer(tiny->timer);
+	tiny->timer.expires = jiffies + DELAY_TIME;
+	add_timer(&tiny->timer);
 }
 
 /*
@@ -95,23 +96,12 @@ static void tiny_timer(unsigned long timer_data)
 static int tiny_activate(struct tty_port *tport, struct tty_struct *tty)
 {
 	struct tiny_serial *tiny;
-	struct timer_list *timer;
 
 	tiny = container_of(tport, struct tiny_serial, port);
 
-	/* create our timer and submit it */
-	if (!tiny->timer) {
-		timer = kmalloc(sizeof(*timer), GFP_KERNEL);
-		if (!timer) {
-			return -ENOMEM;
-		}
-		init_timer(timer);
-		tiny->timer = timer;
-	}
-	tiny->timer->data = (unsigned long )tiny;
-	tiny->timer->expires = jiffies + DELAY_TIME;
-	tiny->timer->function = tiny_timer;
-	add_timer(tiny->timer);
+	timer_setup(&tiny->timer, tiny_timer, 0);
+	tiny->timer.expires = jiffies + DELAY_TIME;
+	add_timer(&tiny->timer);
 	return 0;
 }
 
@@ -125,7 +115,7 @@ static void tiny_shutdown(struct tty_port *tport){
 	tiny = container_of(tport, struct tiny_serial, port);
 
 	/* shut down our timer */
-	del_timer(tiny->timer);
+	del_timer(&tiny->timer);
 }
 
 static int tiny_open(struct tty_struct *tty, struct file *file)
@@ -500,19 +490,6 @@ static int tiny_ioctl(struct tty_struct *tty,
 	return -ENOIOCTLCMD;
 }
 
-static int tiny_tty_proc_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, tiny_tty_proc_show, NULL);
-}
-
-static const struct file_operations tiny_tty_proc_fops = {
-	.owner		= THIS_MODULE,
-	.open		= tiny_tty_proc_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
 static struct tty_operations serial_ops = {
 	.open = tiny_open,
 	.close = tiny_close,
@@ -522,7 +499,7 @@ static struct tty_operations serial_ops = {
 	.tiocmget = tiny_tiocmget,
 	.tiocmset = tiny_tiocmset,
 	.ioctl = tiny_ioctl,
-	.proc_fops       = &tiny_tty_proc_fops,
+	.proc_show       = tiny_tty_proc_show,
 };
 
 static const struct tty_port_operations tiny_port_ops = {
@@ -558,9 +535,10 @@ static int __init tiny_init(void)
 	/* register the tty driver */
 	retval = tty_register_driver(tiny_tty_driver);
 	if (retval) {
-		printk(KERN_ERR "failed to register tiny tty driver");
+		printk(KERN_ERR "failed to register tiny tty driver, retval=%d", retval);
 		goto err_tty_register_driver;
 	}
+	printk(KERN_ERR "register success. major=%d", tiny_tty_driver->major);
 
 	for (i = 0; i < TINY_TTY_MINORS; ++i) {
 		/* let's create it */
@@ -572,7 +550,6 @@ static int __init tiny_init(void)
 		}
 
 		mutex_init(&tiny->port_write_mutex);
-		tiny->timer = NULL;
 
 		tiny_table[i] = tiny;
 		tty_port_init(&tiny->port);
@@ -620,11 +597,6 @@ static void __exit tiny_exit(void)
 		if(tiny->port.count)
 			tiny_shutdown(&tiny->port);
 
-		/* shut down our timer and free the memory */
-		if(tiny->timer) {
-			del_timer(tiny->timer);
-			kfree(tiny->timer);
-		}
 		tty_port_destroy(&tiny->port);
 		kfree(tiny);
 		tiny_table[i] = NULL;
